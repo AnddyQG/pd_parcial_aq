@@ -1,0 +1,119 @@
+version: '3.3'
+services:
+  dbserver:
+    image: postgres:17.5-alpine3.22
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - "c:/db-postgres:/var/lib/postgresql/data/pgdata"
+    ports:
+      - "5435:5432"
+    expose:
+      - 5432
+
+  postgresql-exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      DATA_SOURCE_URI: "dbserver:5432/distribuida?sslmode=disable"
+      DATA_SOURCE_USER: postgres
+      DATA_SOURCE_PASS: postgres
+    expose:
+      - 9187
+
+  consul:
+    image: consul:1.15.4
+    command: |
+      agent -dev
+      -ui
+      -bind 0.0.0.0
+      -client 0.0.0.0
+    ports:
+      - "8500:8500"
+    expose:
+      - 8500
+
+  proxy:
+    image: traefik:3.4.1
+    command:
+      --api.insecure=true
+      --api.dashboard=true
+      --providers.consulCatalog
+      --providers.consulCatalog.refreshInterval=5s
+      --providers.consulCatalog.exposedByDefault=false
+      --providers.consulCatalog.endpoint.address=consul:8500
+      --entryPoints.http.address=":80"
+      --entryPoints.metrics.address=":8082"
+      --metrics.prometheus=true
+      --metrics.prometheus.entryPoint=metrics
+    ports:
+      - "8889:8080"
+      - "8080:80"
+      - "8082:8082"
+
+  authors:
+    image: anddyqg/app-authors:latest
+    environment:
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://dbserver:5432/postgres
+      QUARKUS_DATASOURCE_HTTP_PORT: 8080
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+    #    ports:
+    #      - "7071:8080"
+    expose:
+      - 8080
+    depends_on:
+      - dbserver
+      - consul
+  books:
+    image: anddyqg/app-books:latest
+    environment:
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://dbserver:5432/postgres
+      QUARKUS_DATASOURCE_HTTP_PORT: 8080
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+    #    ports:
+    #      - "9090:8080"
+    expose:
+      - 8080
+    depends_on:
+      - dbserver
+      - consul
+
+  customers:
+    image: anddyqg/app-customers:latest
+    environment:
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://dbserver:5432/postgres
+      QUARKUS_DATASOURCE_HTTP_PORT: 8080
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+    #    ports:
+    #      - "9090:8080"
+    expose:
+      - 8080
+    depends_on:
+      - dbserver
+      - consul
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - "./configs:/etc/prometheus"
+    ports:
+      - "9090:9090"
+    expose:
+      - 9090
+  grafana:
+    image: grafana/grafana-oss:latest
+    ports:
+      - "3000:3000"
+    expose:
+      - 3000
